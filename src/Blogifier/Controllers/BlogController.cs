@@ -1,6 +1,5 @@
 ﻿using Blogifier.Core;
 using Blogifier.Core.Data;
-using Blogifier.Core.Helpers;
 using Blogifier.Core.Services;
 using Blogifier.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -18,7 +17,7 @@ using System.Xml;
 
 namespace Blogifier.Controllers
 {
-    public class BlogController : Controller
+	public class BlogController : Controller
     {
         protected IDataService DataService;
         protected IStorageService StorageService;
@@ -124,12 +123,14 @@ namespace Blogifier.Controllers
 
         [ResponseCache(Duration = 1200)]
         [HttpGet("feed/{type}")]
-        public async Task<IActionResult> Rss(string type)
+        public async Task<IActionResult> Rss(string type, int count = 3)
         {
             string host = Request.Scheme + "://" + Request.Host;
             var blog = await DataService.CustomFields.GetBlogSettings();
-            var posts = await FeedService.GetEntries(type, host);
+            var posts = await DataService.BlogPosts.GetList(count);
             var items = new List<SyndicationItem>();
+
+            host = $"{host}{Url.Content("~/")}";
 
             var feed = new SyndicationFeed(
                 blog.Title, 
@@ -143,14 +144,26 @@ namespace Blogifier.Controllers
             {
                 foreach (var post in posts)
                 {
+                    var atomEntry = await FeedService.GetEntry(post, host);
                     var item = new SyndicationItem(
-                        post.Title,
-                        post.Description.MdToHtml(),
-                        new Uri(post.Id),
-                        post.Id,
-                        post.Published
+                        atomEntry.Title,
+                        atomEntry.Description.MdToHtml(),
+                        new Uri(atomEntry.Id),
+                        atomEntry.Id,
+                        atomEntry.Published
                     );
                     item.PublishDate = post.Published;
+                   
+                    item.ElementExtensions.Add("summary", "", $"{post.Description.MdToHtml()}");
+                    item.ElementExtensions.Add("cover", "", $"{host}{post.Cover}");
+
+                    if(atomEntry.Categories != null && atomEntry.Categories.Count() > 0)
+					     {
+						      foreach (var category in atomEntry.Categories)
+						      {
+                           item.Categories.Add(new SyndicationCategory(category.Name));
+						      }
+					     }
                     items.Add(item);
                 }
             }
